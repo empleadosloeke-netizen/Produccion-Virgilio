@@ -238,7 +238,11 @@ function selectOption(code) {
     inputLabel.innerText = "Ingresar Nro Picking";
     textInput.placeholder = "Ejemplo: A12B";
   }
-
+  if(["CC"].includes(code)){
+    inputArea.classList.remove("hidden");
+    inputLabel.innerText = "Solo Si TERMINO \n Ingresar Nro Picking";
+    textInput.placeholder = "Ejemplo: A12";
+  }
   if (["RT","MG"].includes(code)) {
     inputArea.classList.remove("hidden");
     inputLabel.innerText = "Indicar Cantidad Cajas";
@@ -274,3 +278,4 @@ function send() {
 
 </body>
 </html>
+
