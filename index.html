@@ -181,6 +181,8 @@ button {
 <script>
 const GOOGLE_SCRIPT_URL =
 "https://script.google.com/macros/s/AKfycbwtBRC-bEeVkFNa8MQnJwJr_L4DalBVoS6N8H9C1Z0vh2CLI29Sep7ZZIIVKz6eOGzj/exec";
+const N8N_WEBHOOK_URL =
+"https://forms.elias-page.com/webhook/fd491b4e-adb6-435e-870e-81f4347457ed";
 
 const filas = {
   row1: ["EP","TP","AP","TAP","CR","CC"],
@@ -265,7 +267,14 @@ function send() {
       texto: textInput.value.toUpperCase()
     })
   }).catch(()=>{});
-
+function send() {
+  fetch(N8N_WEBHOOK_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  }).catch(()=>{});
+  
+  
   alert("Reporte enviado correctamente");
 
   // 🔁 volver a inicio
@@ -278,5 +287,6 @@ function send() {
 
 </body>
 </html>
+
 
 
