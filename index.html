@@ -1,4 +1,4 @@
-<!DOCTYPE html><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -19,8 +19,48 @@ button {
 
 .primary-btn { background: #1e6bd6; color: white; border: none; }
 
+/* ---------- PANTALLA LEGAJO ---------- */
 #legajoScreen h1 { font-size: 36px; text-align: center; }
 #legajoInput { width: 100%; font-size: 34px; padding: 12px; text-align: center; border: 6px solid; }
+
+/* 👇 espacio donde se verá el historial (ACHICADO) */
+#legajoHistorySpace{
+  margin-top: 12px;
+  min-height: 25vh;  /* antes 45vh */
+  border-radius: 10px;
+  padding: 12px;
+  box-sizing: border-box;
+}
+
+/* Estilo del historial */
+.history-title{
+  font-size: 18px;
+  font-weight: bold;
+  text-align: center;
+  margin-bottom: 10px;
+}
+.history-item{
+  border: 2px solid #333;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.history-item .line1{
+  font-size: 18px;
+  font-weight: bold;
+}
+.history-item .line2{
+  margin-top: 4px;
+  font-size: 14px;
+  color: #333;
+  word-break: break-word;
+}
+.history-empty{
+  font-size: 16px;
+  text-align: center;
+  color: #666;
+  margin-top: 18px;
+}
 
 .row { display: grid; gap: 8px; margin-top: 13px; }
 .row-6 { grid-template-columns: repeat(6, 1fr); }
@@ -63,6 +103,13 @@ button {
 <div id="legajoScreen">
   <h1>Ingresá tu número de legajo</h1>
   <input id="legajoInput" type="number" inputmode="numeric">
+
+  <!-- 👇 espacio para historial -->
+  <div id="legajoHistorySpace">
+    <div class="history-title">Últimos 2 reportes de este legajo</div>
+    <div id="legajoHistoryContent" class="history-empty">Ingresá tu legajo para ver el historial</div>
+  </div>
+
   <button class="primary-btn" onclick="goToOptions()">Continuar</button>
   <div class="small" id="status"></div>
   <div id="legajoError" class="error"></div>
@@ -119,6 +166,104 @@ const desc = {
 
 let selected = null;
 
+/* =========================================================
+   COOKIES: guardar historial por legajo (últimos 2)
+   ========================================================= */
+const HISTORY_COOKIE = "legajo_history_v1";
+const HISTORY_DAYS = 365;
+
+function setCookie(name, value, days) {
+  const d = new Date();
+  d.setTime(d.getTime() + (days*24*60*60*1000));
+  const expires = "expires=" + d.toUTCString();
+  document.cookie = `${name}=${encodeURIComponent(value)}; ${expires}; path=/; SameSite=Lax`;
+}
+
+function getCookie(name) {
+  const cookies = document.cookie ? document.cookie.split("; ") : [];
+  for (const c of cookies) {
+    const [k, ...rest] = c.split("=");
+    if (k === name) return decodeURIComponent(rest.join("="));
+  }
+  return "";
+}
+
+function readHistoryMap() {
+  try {
+    const raw = getCookie(HISTORY_COOKIE);
+    if (!raw) return {};
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj === "object") return obj;
+    return {};
+  } catch {
+    return {};
+  }
+}
+
+function writeHistoryMap(map) {
+  setCookie(HISTORY_COOKIE, JSON.stringify(map), HISTORY_DAYS);
+}
+
+function formatDateTime(ts) {
+  try {
+    const d = new Date(ts);
+    return d.toLocaleString("es-AR");
+  } catch {
+    return "";
+  }
+}
+
+function pushHistoryForLegajo(legajo, item) {
+  const map = readHistoryMap();
+  if (!map[legajo]) map[legajo] = [];
+  map[legajo].unshift(item);
+  map[legajo] = map[legajo].slice(0,2);
+  writeHistoryMap(map);
+}
+
+function getHistoryForLegajo(legajo) {
+  const map = readHistoryMap();
+  const arr = map[legajo];
+  return Array.isArray(arr) ? arr : [];
+}
+
+function renderLegajoHistory(legajo) {
+  const container = document.getElementById("legajoHistoryContent");
+  if (!legajo) {
+    container.className = "history-empty";
+    container.innerText = "Ingresá tu legajo para ver el historial";
+    return;
+  }
+
+  const hist = getHistoryForLegajo(String(legajo));
+  if (!hist.length) {
+    container.className = "history-empty";
+    container.innerText = "No hay reportes guardados para este legajo en este dispositivo.";
+    return;
+  }
+
+  container.className = "";
+  container.innerHTML = hist.map(h => `
+    <div class="history-item">
+      <div class="line1">${h.opcion} — ${h.descripcion}</div>
+      <div class="line2">
+        ${h.texto ? `Dato: <b>${h.texto}</b><br>` : ""}
+        ${h.ts ? `Fecha: ${formatDateTime(h.ts)}` : ""}
+      </div>
+    </div>
+  `).join("");
+}
+
+let legajoTimer = null;
+legajoInput.addEventListener("input", () => {
+  clearTimeout(legajoTimer);
+  legajoTimer = setTimeout(() => {
+    renderLegajoHistory(legajoInput.value);
+  }, 150);
+});
+
+/* ========================================================= */
+
 Object.keys(filas).forEach(rowId => {
   filas[rowId].forEach(code => {
     const d = document.createElement("div");
@@ -141,6 +286,7 @@ function goToOptions() {
 function backToLegajo() {
   optionsScreen.classList.add("hidden");
   legajoScreen.classList.remove("hidden");
+  renderLegajoHistory(legajoInput.value);
 }
 
 function selectOption(code) {
@@ -169,16 +315,16 @@ function selectOption(code) {
     textInput.placeholder = "Ejemplo: 100";
   }
   if (["AT","PB","Limp","PC"].includes(code)) {
-  aviso.classList.remove("hidden");
-  aviso.innerText = "Acordate de poner lo mismo al terminar";
-} else {
-    if (["Perm"].includes(code)) {
     aviso.classList.remove("hidden");
-    aviso.innerText = "Acordate de poner lo mismo si regresas en el mismo dia";
+    aviso.innerText = "Acordate de poner lo mismo al terminar";
+  } else {
+    if (["Perm"].includes(code)) {
+      aviso.classList.remove("hidden");
+      aviso.innerText = "Acordate de poner lo mismo si regresas en el mismo dia";
     } else {
       aviso.classList.add("hidden");
     }
-}
+  }
 }
 
 function resetSelection() {
@@ -187,28 +333,44 @@ function resetSelection() {
 }
 
 function send() {
+  const legajo = String(legajoInput.value || "");
+  const opcion = selected;
+  const descripcion = desc[selected] || "";
+  const texto = (textInput.value || "").toUpperCase();
+
+  if (legajo && opcion) {
+    pushHistoryForLegajo(legajo, {
+      ts: Date.now(),
+      opcion,
+      descripcion,
+      texto
+    });
+  }
+
   fetch(GOOGLE_SCRIPT_URL,{
     method:"POST",
     body:JSON.stringify({
       legajo: legajoInput.value,
       opcion: selected,
       descripcion: desc[selected],
-      texto: textInput.value.toUpperCase()
+      texto: texto
     })
   }).catch(()=>{});
 
   alert("Reporte enviado correctamente");
 
-  // 🔁 volver a inicio
   resetSelection();
   optionsScreen.classList.add("hidden");
   legajoScreen.classList.remove("hidden");
+
+  renderLegajoHistory(legajoInput.value);
+
   legajoInput.value = "";
+  renderLegajoHistory("");
 }
+
+renderLegajoHistory("");
 </script>
 
 </body>
 </html>
-
-
-
