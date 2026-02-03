@@ -125,6 +125,8 @@ button {
   <div class="row row-6" id="row1"></div>
   <div class="row row-4" id="row2"></div>
   <div class="row row-5" id="row3"></div>
+  <div id="pendingSuggestion"></div>
+
 
   <div id="selectedArea" class="hidden">
 
@@ -167,50 +169,26 @@ const desc = {
 let selected = null;
 
 /* =========================================================
-   COOKIES: guardar historial por legajo (últimos 2)
+   STORAGE LOCAL (reemplaza cookies)
    ========================================================= */
-const HISTORY_COOKIE = "legajo_history_v1";
-const HISTORY_DAYS = 365;
+const HISTORY_KEY  = "legajo_history_virgilio_v1";
+const STATE_KEY    = "legajo_state_virgilio_v1"; // pendientes / estados por legajo
 
-function setCookie(name, value, days) {
-  const d = new Date();
-  d.setTime(d.getTime() + (days*24*60*60*1000));
-  const expires = "expires=" + d.toUTCString();
-  document.cookie = `${name}=${encodeURIComponent(value)}; ${expires}; path=/; SameSite=Lax`;
-}
-
-function getCookie(name) {
-  const cookies = document.cookie ? document.cookie.split("; ") : [];
-  for (const c of cookies) {
-    const [k, ...rest] = c.split("=");
-    if (k === name) return decodeURIComponent(rest.join("="));
-  }
-  return "";
-}
-
+/* =========================================================
+   HISTORIAL (últimos 2)
+   ========================================================= */
 function readHistoryMap() {
-  try {
-    const raw = getCookie(HISTORY_COOKIE);
-    if (!raw) return {};
-    const obj = JSON.parse(raw);
-    if (obj && typeof obj === "object") return obj;
-    return {};
-  } catch {
-    return {};
-  }
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || {}; }
+  catch { return {}; }
 }
 
 function writeHistoryMap(map) {
-  setCookie(HISTORY_COOKIE, JSON.stringify(map), HISTORY_DAYS);
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(map));
 }
 
 function formatDateTime(ts) {
-  try {
-    const d = new Date(ts);
-    return d.toLocaleString("es-AR");
-  } catch {
-    return "";
-  }
+  try { return new Date(ts).toLocaleString("es-AR"); }
+  catch { return ""; }
 }
 
 function pushHistoryForLegajo(legajo, item) {
@@ -254,6 +232,7 @@ function renderLegajoHistory(legajo) {
   `).join("");
 }
 
+/* Live render historial al tipear legajo */
 let legajoTimer = null;
 legajoInput.addEventListener("input", () => {
   clearTimeout(legajoTimer);
@@ -262,8 +241,111 @@ legajoInput.addEventListener("input", () => {
   }, 150);
 });
 
-/* ========================================================= */
+/* =========================================================
+   ESTADO por legajo:
+   - picking: { active, value }  (EP->TP)
+   - armado:  { active, value }  (AP->TAP)
+   - toggles: { CR:true, CC:true, RT:true, ... } (1ra vez inicia, 2da termina)
+   ========================================================= */
+const TOGGLE_CODES = ["CR","CC","RT","MG","RI","EI"];
 
+function readStateMap(){
+  try { return JSON.parse(localStorage.getItem(STATE_KEY)) || {}; }
+  catch { return {}; }
+}
+
+function writeStateMap(map){
+  localStorage.setItem(STATE_KEY, JSON.stringify(map));
+}
+
+function getLegajoState(legajo){
+  const map = readStateMap();
+  const key = String(legajo || "");
+  if (!map[key]) {
+    map[key] = { picking: {active:false,value:""}, armado:{active:false,value:""}, toggles:{} };
+    writeStateMap(map);
+  } else {
+    // normalizar estructura por si viene viejo
+    map[key].picking = map[key].picking || {active:false,value:""};
+    map[key].armado  = map[key].armado  || {active:false,value:""};
+    map[key].toggles = map[key].toggles || {};
+  }
+  return map[key];
+}
+
+function setLegajoState(legajo, newState){
+  const map = readStateMap();
+  map[String(legajo || "")] = newState;
+  writeStateMap(map);
+}
+
+function isToggleEnding(legajo, code){
+  if (!TOGGLE_CODES.includes(code)) return false;
+  const st = getLegajoState(legajo);
+  return !!st.toggles[code]; // si ya estaba activo, ahora corresponde terminar
+}
+
+function toggleStartOrEnd(legajo, code){
+  const st = getLegajoState(legajo);
+  const wasActive = !!st.toggles[code];
+  if (wasActive) delete st.toggles[code];
+  else st.toggles[code] = true;
+  setLegajoState(legajo, st);
+  return { started: !wasActive, ended: wasActive };
+}
+
+/* =========================================================
+   SUGERENCIA (SOLO Picking/Armado)  ✅ CC ELIMINADO
+   ========================================================= */
+function ensurePendingSuggestionContainer(){
+  let box = document.getElementById("pendingSuggestion");
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "pendingSuggestion";
+    const row3El = document.getElementById("row3");
+    if (row3El && row3El.parentNode) row3El.parentNode.insertBefore(box, row3El.nextSibling);
+  }
+  return box;
+}
+
+function renderPendingSuggestion(){
+  const legajo = String(legajoInput.value || "");
+  const box = ensurePendingSuggestionContainer();
+  box.innerHTML = "";
+  if(!legajo) return;
+
+  const st = getLegajoState(legajo);
+
+  // PICKING
+  if (st.picking && st.picking.active && st.picking.value) {
+    const btn = document.createElement("button");
+    btn.className = "primary-btn";
+    btn.innerText = `Tenés un Picking pendiente (${st.picking.value}) — Presioná para terminar`;
+    btn.onclick = ()=>{
+      selectOption("TP");
+      textInput.value = st.picking.value || "";
+    };
+    box.appendChild(btn);
+    return;
+  }
+
+  // ARMADO
+  if (st.armado && st.armado.active && st.armado.value) {
+    const btn = document.createElement("button");
+    btn.className = "primary-btn";
+    btn.innerText = `Tenés un Armado pendiente (${st.armado.value}) — Presioná para terminar`;
+    btn.onclick = ()=>{
+      selectOption("TAP");
+      textInput.value = st.armado.value || "";
+    };
+    box.appendChild(btn);
+    return;
+  }
+}
+
+/* =========================================================
+   ARMADO DE BOTONES
+   ========================================================= */
 Object.keys(filas).forEach(rowId => {
   filas[rowId].forEach(code => {
     const d = document.createElement("div");
@@ -277,10 +359,14 @@ Object.keys(filas).forEach(rowId => {
   });
 });
 
+/* =========================================================
+   NAVEGACIÓN
+   ========================================================= */
 function goToOptions() {
   if (!legajoInput.value) return alert("Ingresá el número de legajo");
   legajoScreen.classList.add("hidden");
   optionsScreen.classList.remove("hidden");
+  renderPendingSuggestion();
 }
 
 function backToLegajo() {
@@ -296,24 +382,38 @@ function selectOption(code) {
   selectedBox.innerText = code;
   selectedDesc.innerText = desc[code];
 
+  // reset input
   inputArea.classList.add("hidden");
   textInput.value = "";
+  textInput.placeholder = "";
 
-  if (["EP","TP","AP","TAP","CR"].includes(code)) {
+  const legajoStr = String(legajoInput.value || "");
+
+  // ======= REGLA NUEVA: CR/CC/RT/MG/RI/EI solo muestran input al TERMINAR =======
+    if (TOGGLE_CODES.includes(code)) {
+    const ending = isToggleEnding(legajoStr, code);
+    if (ending && code !== "MG") {   // 👈 MG excluido
+      inputArea.classList.remove("hidden");
+
+      if (["CR","CC"].includes(code)) {
+        inputLabel.innerText = "Ingresar Nro Picking";
+        textInput.placeholder = "Ejemplo: A12B";
+      } else {
+        // RT/RI/EI (sin MG)
+        inputLabel.innerText = "Indicar Cantidad";
+        textInput.placeholder = "Ejemplo: 100";
+      }
+    }
+  }
+
+  // ======= Picking / Armado siguen igual (siempre piden nro) =======
+  else if (["EP","TP","AP","TAP"].includes(code)) {
     inputArea.classList.remove("hidden");
     inputLabel.innerText = "Ingresar Nro Picking";
     textInput.placeholder = "Ejemplo: A12B";
   }
-  if(["CC"].includes(code)){
-    inputArea.classList.remove("hidden");
-    inputLabel.innerText = "Solo Si TERMINO \n Ingresar Nro Picking";
-    textInput.placeholder = "Ejemplo: A12";
-  }
-  if (["RT","MG"].includes(code)) {
-    inputArea.classList.remove("hidden");
-    inputLabel.innerText = "Indicar Cantidad Cajas";
-    textInput.placeholder = "Ejemplo: 100";
-  }
+
+  // Avisos (sin cambios)
   if (["AT","PB","Limp","PC"].includes(code)) {
     aviso.classList.remove("hidden");
     aviso.innerText = "Acordate de poner lo mismo al terminar";
@@ -332,19 +432,49 @@ function resetSelection() {
   selectedArea.classList.add("hidden");
 }
 
+/* =========================================================
+   ENVÍO
+   ========================================================= */
 function send() {
-  const legajo = String(legajoInput.value || "");
+  const legajoStr = String(legajoInput.value || "");
   const opcion = selected;
   const descripcion = desc[selected] || "";
   const texto = (textInput.value || "").toUpperCase();
 
-  if (legajo && opcion) {
-    pushHistoryForLegajo(legajo, {
+  // Si es toggle y corresponde "inicio", NO debería haber input (texto puede venir vacío).
+  // Si es toggle y corresponde "fin", ya te mostramos input.
+  // No bloqueamos envío si está vacío (para inicios), pero podés forzarlo si querés.
+
+  /* ---- historial ---- */
+  if (legajoStr && opcion) {
+    pushHistoryForLegajo(legajoStr, {
       ts: Date.now(),
       opcion,
       descripcion,
       texto
     });
+  }
+
+  /* ---- estado / pendientes ---- */
+  if (opcion === "EP") {
+    const st = getLegajoState(legajoStr);
+    st.picking = { active:true, value:texto };
+    setLegajoState(legajoStr, st);
+  } else if (opcion === "TP") {
+    const st = getLegajoState(legajoStr);
+    st.picking = { active:false, value:"" };
+    setLegajoState(legajoStr, st);
+  } else if (opcion === "AP") {
+    const st = getLegajoState(legajoStr);
+    st.armado = { active:true, value:texto };
+    setLegajoState(legajoStr, st);
+  } else if (opcion === "TAP") {
+    const st = getLegajoState(legajoStr);
+    st.armado = { active:false, value:"" };
+    setLegajoState(legajoStr, st);
+  } else if (TOGGLE_CODES.includes(opcion)) {
+    // 1ra vez inicia / 2da termina
+    toggleStartOrEnd(legajoStr, opcion);
   }
 
   fetch(GOOGLE_SCRIPT_URL,{
@@ -369,8 +499,12 @@ function send() {
   renderLegajoHistory("");
 }
 
+/* init */
 renderLegajoHistory("");
 </script>
+
+
+
 
 </body>
 </html>
