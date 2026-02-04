@@ -26,7 +26,7 @@ button {
 /* 👇 espacio donde se verá el historial (ACHICADO) */
 #legajoHistorySpace{
   margin-top: 12px;
-  min-height: 25vh;  /* antes 45vh */
+  min-height: 25vh;
   border-radius: 10px;
   padding: 12px;
   box-sizing: border-box;
@@ -94,6 +94,15 @@ button {
  font-size:30px;
  text-align:center;
 }
+
+/* ✅ deshabilitado visual */
+.box.disabled{
+  background:#ddd;
+  color:#888;
+  border-color:#aaa;
+  pointer-events:none;
+  opacity:0.6;
+}
 </style>
 </head>
 
@@ -126,7 +135,6 @@ button {
   <div class="row row-4" id="row2"></div>
   <div class="row row-5" id="row3"></div>
   <div id="pendingSuggestion"></div>
-
 
   <div id="selectedArea" class="hidden">
 
@@ -172,7 +180,7 @@ let selected = null;
    STORAGE LOCAL (reemplaza cookies)
    ========================================================= */
 const HISTORY_KEY  = "legajo_history_virgilio_v1";
-const STATE_KEY    = "legajo_state_virgilio_v1"; // pendientes / estados por legajo
+const STATE_KEY    = "legajo_state_virgilio_v1";
 
 /* =========================================================
    HISTORIAL (últimos 2)
@@ -181,16 +189,13 @@ function readHistoryMap() {
   try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || {}; }
   catch { return {}; }
 }
-
 function writeHistoryMap(map) {
   localStorage.setItem(HISTORY_KEY, JSON.stringify(map));
 }
-
 function formatDateTime(ts) {
   try { return new Date(ts).toLocaleString("es-AR"); }
   catch { return ""; }
 }
-
 function pushHistoryForLegajo(legajo, item) {
   const map = readHistoryMap();
   if (!map[legajo]) map[legajo] = [];
@@ -198,13 +203,11 @@ function pushHistoryForLegajo(legajo, item) {
   map[legajo] = map[legajo].slice(0,2);
   writeHistoryMap(map);
 }
-
 function getHistoryForLegajo(legajo) {
   const map = readHistoryMap();
   const arr = map[legajo];
   return Array.isArray(arr) ? arr : [];
 }
-
 function renderLegajoHistory(legajo) {
   const container = document.getElementById("legajoHistoryContent");
   if (!legajo) {
@@ -238,6 +241,8 @@ legajoInput.addEventListener("input", () => {
   clearTimeout(legajoTimer);
   legajoTimer = setTimeout(() => {
     renderLegajoHistory(legajoInput.value);
+    updateCoreButtonsState();
+    renderPendingSuggestion();
   }, 150);
 });
 
@@ -245,19 +250,18 @@ legajoInput.addEventListener("input", () => {
    ESTADO por legajo:
    - picking: { active, value }  (EP->TP)
    - armado:  { active, value }  (AP->TAP)
-   - toggles: { CR:true, CC:true, RT:true, ... } (1ra vez inicia, 2da termina)
+   - toggles: { CR:true, AT:true, ... } (1ra vez inicia, 2da termina)
    ========================================================= */
-const TOGGLE_CODES = ["CR","CC","RT","MG","RI","EI"];
+const CORE_CODES   = ["EP","TP","AP","TAP"];
+const TOGGLE_CODES = ["CR","CC","RT","MG","RI","EI","AT","PB","Limp","PC","Perm"];
 
 function readStateMap(){
   try { return JSON.parse(localStorage.getItem(STATE_KEY)) || {}; }
   catch { return {}; }
 }
-
 function writeStateMap(map){
   localStorage.setItem(STATE_KEY, JSON.stringify(map));
 }
-
 function getLegajoState(legajo){
   const map = readStateMap();
   const key = String(legajo || "");
@@ -265,26 +269,22 @@ function getLegajoState(legajo){
     map[key] = { picking: {active:false,value:""}, armado:{active:false,value:""}, toggles:{} };
     writeStateMap(map);
   } else {
-    // normalizar estructura por si viene viejo
     map[key].picking = map[key].picking || {active:false,value:""};
     map[key].armado  = map[key].armado  || {active:false,value:""};
     map[key].toggles = map[key].toggles || {};
   }
   return map[key];
 }
-
 function setLegajoState(legajo, newState){
   const map = readStateMap();
   map[String(legajo || "")] = newState;
   writeStateMap(map);
 }
-
 function isToggleEnding(legajo, code){
   if (!TOGGLE_CODES.includes(code)) return false;
   const st = getLegajoState(legajo);
-  return !!st.toggles[code]; // si ya estaba activo, ahora corresponde terminar
+  return !!st.toggles[code];
 }
-
 function toggleStartOrEnd(legajo, code){
   const st = getLegajoState(legajo);
   const wasActive = !!st.toggles[code];
@@ -295,7 +295,31 @@ function toggleStartOrEnd(legajo, code){
 }
 
 /* =========================================================
-   SUGERENCIA (SOLO Picking/Armado)  ✅ CC ELIMINADO
+   BLOQUEO: si hay cualquier toggle activo (no-core), NO se puede seleccionar EP/TP/AP/TAP
+   + deshabilitado visual
+   ========================================================= */
+function getAnyBlockingToggleActive(legajo){
+  const st = getLegajoState(legajo);
+  const keys = Object.keys(st.toggles || {});
+  return keys[0] || null;
+}
+
+function updateCoreButtonsState(){
+  const legajoStr = String(legajoInput.value || "");
+  const blocking = getAnyBlockingToggleActive(legajoStr);
+
+  document.querySelectorAll(".box").forEach(b=>{
+    const code = b.querySelector(".box-title")?.innerText?.trim();
+    if (!code) return;
+    if (CORE_CODES.includes(code)) {
+      if (blocking) b.classList.add("disabled");
+      else b.classList.remove("disabled");
+    }
+  });
+}
+
+/* =========================================================
+   SUGERENCIA (SOLO Picking/Armado)
    ========================================================= */
 function ensurePendingSuggestionContainer(){
   let box = document.getElementById("pendingSuggestion");
@@ -313,6 +337,10 @@ function renderPendingSuggestion(){
   const box = ensurePendingSuggestionContainer();
   box.innerHTML = "";
   if(!legajo) return;
+
+  // ✅ SI HAY BLOQUEO (cualquier toggle activo), NO MOSTRAR sugerencias
+  const blocking = getAnyBlockingToggleActive(legajo);
+  if (blocking) return;
 
   const st = getLegajoState(legajo);
 
@@ -367,6 +395,7 @@ function goToOptions() {
   legajoScreen.classList.add("hidden");
   optionsScreen.classList.remove("hidden");
   renderPendingSuggestion();
+  updateCoreButtonsState();
 }
 
 function backToLegajo() {
@@ -376,6 +405,18 @@ function backToLegajo() {
 }
 
 function selectOption(code) {
+  const legajoStr = String(legajoInput.value || "");
+
+  // bloqueo de core
+  if (CORE_CODES.includes(code)) {
+    const blocking = getAnyBlockingToggleActive(legajoStr);
+    if (blocking) {
+      alert(`Tenés una acción pendiente: ${blocking} — ${desc[blocking]}\nTerminála antes de usar EP/TP/AP/TAP.`);
+      updateCoreButtonsState();
+      return;
+    }
+  }
+
   selected = code;
   selectedArea.classList.remove("hidden");
 
@@ -387,33 +428,34 @@ function selectOption(code) {
   textInput.value = "";
   textInput.placeholder = "";
 
-  const legajoStr = String(legajoInput.value || "");
+  // ======= REGLA: toggles muestran input SOLO al TERMINAR (y algunos nunca)
+  if (TOGGLE_CODES.includes(code)) {
+  const ending = isToggleEnding(legajoStr, code);
 
-  // ======= REGLA NUEVA: CR/CC/RT/MG/RI/EI solo muestran input al TERMINAR =======
-    if (TOGGLE_CODES.includes(code)) {
-    const ending = isToggleEnding(legajoStr, code);
-    if (ending && code !== "MG") {   // 👈 MG excluido
-      inputArea.classList.remove("hidden");
+  // Estos NUNCA piden input
+  const NEVER_INPUT = ["AT","PB","Limp","PC","Perm","MG","CR"];  // 👈 CR agregado
 
-      if (["CR","CC"].includes(code)) {
-        inputLabel.innerText = "Ingresar Nro Picking";
-        textInput.placeholder = "Ejemplo: A12B";
-      } else {
-        // RT/RI/EI (sin MG)
-        inputLabel.innerText = "Indicar Cantidad";
-        textInput.placeholder = "Ejemplo: 100";
-      }
+  if (ending && !NEVER_INPUT.includes(code)) {
+    inputArea.classList.remove("hidden");
+
+    if (code === "CC") {
+      inputLabel.innerText = "Ingresar Nro Picking";
+      textInput.placeholder = "Ejemplo: A12";
+    } else {
+      inputLabel.innerText = "Indicar Cantidad";
+      textInput.placeholder = "Ejemplo: 100";
     }
   }
+}
 
-  // ======= Picking / Armado siguen igual (siempre piden nro) =======
+  // ======= Picking / Armado siguen igual (siempre piden nro)
   else if (["EP","TP","AP","TAP"].includes(code)) {
     inputArea.classList.remove("hidden");
     inputLabel.innerText = "Ingresar Nro Picking";
     textInput.placeholder = "Ejemplo: A12B";
   }
 
-  // Avisos (sin cambios)
+  // Avisos
   if (["AT","PB","Limp","PC"].includes(code)) {
     aviso.classList.remove("hidden");
     aviso.innerText = "Acordate de poner lo mismo al terminar";
@@ -425,6 +467,8 @@ function selectOption(code) {
       aviso.classList.add("hidden");
     }
   }
+
+  updateCoreButtonsState();
 }
 
 function resetSelection() {
@@ -440,10 +484,6 @@ function send() {
   const opcion = selected;
   const descripcion = desc[selected] || "";
   const texto = (textInput.value || "").toUpperCase();
-
-  // Si es toggle y corresponde "inicio", NO debería haber input (texto puede venir vacío).
-  // Si es toggle y corresponde "fin", ya te mostramos input.
-  // No bloqueamos envío si está vacío (para inicios), pero podés forzarlo si querés.
 
   /* ---- historial ---- */
   if (legajoStr && opcion) {
@@ -497,14 +537,14 @@ function send() {
 
   legajoInput.value = "";
   renderLegajoHistory("");
+
+  updateCoreButtonsState();
+  renderPendingSuggestion();
 }
 
 /* init */
 renderLegajoHistory("");
 </script>
-
-
-
 
 </body>
 </html>
