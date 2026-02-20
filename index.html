@@ -132,7 +132,7 @@ button {
   </div>
 
   <div class="row row-6" id="row1"></div>
-  <div class="row row-4" id="row2"></div>
+  <div class="row row-5" id="row2"></div>
   <div class="row row-5" id="row3"></div>
   <div id="pendingSuggestion"></div>
 
@@ -161,7 +161,7 @@ const GOOGLE_SCRIPT_URL =
 
 const filas = {
   row1: ["EP","TP","AP","TAP","CR","CC"],
-  row2: ["RT","MG","RI","EI"],
+  row2: ["RT","MG","RI","EI","CT"],
   row3: ["AT","PB","Limp","Perm","PC"]
 };
 
@@ -171,7 +171,7 @@ const desc = {
   RT:"Recepción Mercadería", MG:"Guardado a Góndola",
   RI:"Recepción Insumos", EI:"Entrega Insumos",
   AT:"Atendí Timbre", PB:"Paré Baño", Limp:"Limpieza",
-  Perm:"Permiso de Salida", PC:"Paré Comida"
+  Perm:"Permiso de Salida", PC:"Paré Comida",CT:"Conteo"
 };
 
 let selected = null;
@@ -253,7 +253,7 @@ legajoInput.addEventListener("input", () => {
    - toggles: { CR:true, AT:true, ... } (1ra vez inicia, 2da termina)
    ========================================================= */
 const CORE_CODES   = ["EP","TP","AP","TAP"];
-const TOGGLE_CODES = ["CR","CC","RT","MG","RI","EI","AT","PB","Limp","PC","Perm"];
+const TOGGLE_CODES = ["CR","CC","RT","MG","RI","EI","AT","PB","Limp","PC","Perm","CT"];
 
 function readStateMap(){
   try { return JSON.parse(localStorage.getItem(STATE_KEY)) || {}; }
@@ -433,7 +433,7 @@ function selectOption(code) {
   const ending = isToggleEnding(legajoStr, code);
 
   // Estos NUNCA piden input
-  const NEVER_INPUT = ["AT","PB","Limp","PC","Perm","MG","CR"];  // 👈 CR agregado
+  const NEVER_INPUT = ["AT","PB","Limp","PC","Perm","MG","CR","CT"];  // 👈 CR agregado y CT
 
   if (ending && !NEVER_INPUT.includes(code)) {
     inputArea.classList.remove("hidden");
@@ -456,7 +456,7 @@ function selectOption(code) {
   }
 
   // Avisos
-  if (["AT","PB","Limp","PC"].includes(code)) {
+  if (["AT","PB","Limp","PC","CT"].includes(code)) {
     aviso.classList.remove("hidden");
     aviso.innerText = "Acordate de poner lo mismo al terminar";
   } else {
